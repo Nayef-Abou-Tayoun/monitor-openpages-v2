@@ -5,7 +5,7 @@
     "output_format_description": "Global output format for upsert/delete/query_* tool responses. Options: 'text' (human-readable) or 'json' (structured, machine-readable for agents). Note: execute_openpages_query tool has its own 'format' parameter (table/json/list) for query-specific formatting.",
     "namespace": "openpages",
     "namespace_description": "Global namespace prefix for generic tools (e.g., delete_object becomes openpages_delete_object)",
-    "tool_exposure_mode": "type_based",
+    "tool_exposure_mode": "all",
     "tool_exposure_mode_description": "Controls which tools are exposed. Options: 'all' (both ontology_based and type_based), 'ontology_based' (only ontology based generic tools like upsert_object), 'type_based' (only type-specific tools like upsert_control)"
   },
   "object_types": [
