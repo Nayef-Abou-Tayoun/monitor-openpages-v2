@@ -225,6 +225,171 @@
         "include_all_fields": false
       },
       "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXAudit",
+      "tool_prefix": "audit",
+      "display_name": "Audit",
+      "path_prefix": "Audits",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update an audit in OpenPages. Automatically determines whether to insert a new audit or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve audits from OpenPages. Supports filtering by name, owner, and custom field filters. Returns audit details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXFinding",
+      "tool_prefix": "finding",
+      "display_name": "Finding",
+      "path_prefix": "Findings",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a finding in OpenPages. Automatically determines whether to insert a new finding or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve findings from OpenPages. Supports filtering by name, owner, and custom field filters. Returns finding details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXAssessment",
+      "tool_prefix": "assessment",
+      "display_name": "Assessment",
+      "path_prefix": "Assessments",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update an assessment in OpenPages. Automatically determines whether to insert a new assessment or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve assessments from OpenPages. Supports filtering by name, owner, and custom field filters. Returns assessment details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXEvidence",
+      "tool_prefix": "evidence",
+      "display_name": "Evidence",
+      "path_prefix": "Evidence",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update evidence in OpenPages. Automatically determines whether to insert new evidence or update existing evidence based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve evidence from OpenPages. Supports filtering by name, owner, and custom field filters. Returns evidence details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXDocument",
+      "tool_prefix": "document",
+      "display_name": "Document",
+      "path_prefix": "Documents",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a document in OpenPages. Automatically determines whether to insert a new document or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve documents from OpenPages. Supports filtering by name, owner, and custom field filters. Returns document details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXAction",
+      "tool_prefix": "action",
+      "display_name": "Action",
+      "path_prefix": "Actions",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update an action in OpenPages. Automatically determines whether to insert a new action or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve actions from OpenPages. Supports filtering by name, owner, and custom field filters. Returns action details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXRemediation",
+      "tool_prefix": "remediation",
+      "display_name": "Remediation",
+      "path_prefix": "Remediations",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a remediation in OpenPages. Automatically determines whether to insert a new remediation or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve remediations from OpenPages. Supports filtering by name, owner, and custom field filters. Returns remediation details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXLoss",
+      "tool_prefix": "loss",
+      "display_name": "Loss Event",
+      "path_prefix": "Loss Events",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a loss event in OpenPages. Automatically determines whether to insert a new loss event or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve loss events from OpenPages. Supports filtering by name, owner, and custom field filters. Returns loss event details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXIncident",
+      "tool_prefix": "incident",
+      "display_name": "Incident",
+      "path_prefix": "Incidents",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update an incident in OpenPages. Automatically determines whether to insert a new incident or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve incidents from OpenPages. Supports filtering by name, owner, and custom field filters. Returns incident details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXComplaint",
+      "tool_prefix": "complaint",
+      "display_name": "Complaint",
+      "path_prefix": "Complaints",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a complaint in OpenPages. Automatically determines whether to insert a new complaint or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve complaints from OpenPages. Supports filtering by name, owner, and custom field filters. Returns complaint details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXReport",
+      "tool_prefix": "report",
+      "display_name": "Report",
+      "path_prefix": "Reports",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a report in OpenPages. Automatically determines whether to insert a new report or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve reports from OpenPages. Supports filtering by name, owner, and custom field filters. Returns report details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
     }
   ]
 }
