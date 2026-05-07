@@ -5,7 +5,7 @@
     "output_format_description": "Global output format for upsert/delete/query_* tool responses. Options: 'text' (human-readable) or 'json' (structured, machine-readable for agents). Note: execute_openpages_query tool has its own 'format' parameter (table/json/list) for query-specific formatting.",
     "namespace": "openpages",
     "namespace_description": "Global namespace prefix for generic tools (e.g., delete_object becomes openpages_delete_object)",
-    "tool_exposure_mode": "ontology_based",
+    "tool_exposure_mode": "type_based",
     "tool_exposure_mode_description": "Controls which tools are exposed. Options: 'all' (both ontology_based and type_based), 'ontology_based' (only ontology based generic tools like upsert_object), 'type_based' (only type-specific tools like upsert_control)"
   },
   "object_types": [
@@ -105,6 +105,126 @@
       "type_based_query_filters": {
         "_comment": "USED BY: Type-based query_usecase tool ONLY. No specific filters configured"
       }
+    },
+    {
+      "type_id": "SOXBusEntity",
+      "tool_prefix": "businessentity",
+      "display_name": "Business Entity",
+      "path_prefix": "Business Entities",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a business entity in OpenPages. Automatically determines whether to insert a new business entity or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve business entities from OpenPages. Supports filtering by name, owner, and custom field filters. Returns business entity details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXProcess",
+      "tool_prefix": "process",
+      "display_name": "Process",
+      "path_prefix": "Processes",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a process in OpenPages. Automatically determines whether to insert a new process or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve processes from OpenPages. Supports filtering by name, owner, and custom field filters. Returns process details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXPolicy",
+      "tool_prefix": "policy",
+      "display_name": "Policy",
+      "path_prefix": "Policies",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a policy in OpenPages. Automatically determines whether to insert a new policy or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve policies from OpenPages. Supports filtering by name, owner, and custom field filters. Returns policy details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXRegulation",
+      "tool_prefix": "regulation",
+      "display_name": "Regulation",
+      "path_prefix": "Regulations",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a regulation in OpenPages. Automatically determines whether to insert a new regulation or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve regulations from OpenPages. Supports filtering by name, owner, and custom field filters. Returns regulation details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXTest",
+      "tool_prefix": "test",
+      "display_name": "Test",
+      "path_prefix": "Tests",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a test in OpenPages. Automatically determines whether to insert a new test or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve tests from OpenPages. Supports filtering by name, owner, and custom field filters. Returns test details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXVendor",
+      "tool_prefix": "vendor",
+      "display_name": "Vendor",
+      "path_prefix": "Vendors",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a vendor in OpenPages. Automatically determines whether to insert a new vendor or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve vendors from OpenPages. Supports filtering by name, owner, and custom field filters. Returns vendor details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXAuditPlan",
+      "tool_prefix": "auditplan",
+      "display_name": "Audit Plan",
+      "path_prefix": "Audit Plans",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update an audit plan in OpenPages. Automatically determines whether to insert a new audit plan or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve audit plans from OpenPages. Supports filtering by name, owner, and custom field filters. Returns audit plan details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
+    },
+    {
+      "type_id": "SOXQuestionTemplate",
+      "tool_prefix": "questiontemplate",
+      "display_name": "Question Template",
+      "path_prefix": "Question Templates",
+      "namespace": "openpages",
+      "tool_descriptions": {
+        "upsert": "Create or update a question template in OpenPages. Automatically determines whether to insert a new question template or update an existing one based on provided identifiers (id, path, or name).",
+        "query": "Search and retrieve question templates from OpenPages. Supports filtering by name, owner, and custom field filters. Returns question template details including ID, name, description, and selected fields."
+      },
+      "resource_fields": {
+        "include_all_fields": false
+      },
+      "type_based_query_filters": {}
     }
   ]
 }
