@@ -391,6 +391,7 @@ class OpenPagesClient:
                     self._http_client = httpx.AsyncClient(
                         verify=self.settings.SSL_VERIFY,
                         limits=pool_limits,
+                        follow_redirects=True,
                     )
                     logger.debug(f"Created shared httpx.AsyncClient (max_connections={max_connections})")
         return self._http_client
