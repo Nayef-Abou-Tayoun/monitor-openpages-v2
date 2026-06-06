@@ -709,6 +709,26 @@ Please provide:
                 print(f"      ⚠ Cannot upload: Unable to determine document folder for process {process_id}")
                 return None
             
+            # Check if a document with this name already exists in the folder
+            base = self.client.base_url.replace('/openpages', '').rstrip('/')
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                # Get all documents in the folder
+                folder_url = f"{base}/grc/api/contents/{folder_id}/associations/children"
+                folder_response = await http_client.get(
+                    folder_url,
+                    auth=(self.client.username, self.client.password),
+                    timeout=30.0
+                )
+                
+                if folder_response.status_code == 200:
+                    existing_docs = folder_response.json()
+                    for doc in existing_docs:
+                        if doc.get('name') == filename:
+                            existing_id = doc.get('id')
+                            print(f"      ℹ️  Document already exists: {filename} (ID: {existing_id})")
+                            print(f"      ✓ Skipping upload - summary already in OpenPages")
+                            return existing_id
+            
             # Encode file content to base64 for binary files
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
             
