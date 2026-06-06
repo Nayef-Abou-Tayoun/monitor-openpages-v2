@@ -722,12 +722,16 @@ Please provide:
                 
                 if folder_response.status_code == 200:
                     existing_docs = folder_response.json()
+                    print(f"      🔍 Checking {len(existing_docs)} existing documents in folder for duplicates...")
                     for doc in existing_docs:
-                        if doc.get('name') == filename:
-                            existing_id = doc.get('id')
-                            print(f"      ℹ️  Document already exists: {filename} (ID: {existing_id})")
+                        doc_name = doc.get('name', '')
+                        doc_id = doc.get('id', '')
+                        print(f"         - Existing: '{doc_name}' vs New: '{filename}'")
+                        if doc_name == filename:
+                            print(f"      ℹ️  Document already exists: {filename} (ID: {doc_id})")
                             print(f"      ✓ Skipping upload - summary already in OpenPages")
-                            return existing_id
+                            return doc_id
+                    print(f"      ✓ No duplicate found, proceeding with upload")
             
             # Encode file content to base64 for binary files
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
