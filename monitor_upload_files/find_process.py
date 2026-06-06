@@ -709,30 +709,6 @@ Please provide:
                 print(f"      ⚠ Cannot upload: Unable to determine document folder for process {process_id}")
                 return None
             
-            # Check if a document with this name already exists in the folder
-            base = self.client.base_url.replace('/openpages', '').rstrip('/')
-            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
-                # Get all documents in the folder
-                folder_url = f"{base}/grc/api/contents/{folder_id}/associations/children"
-                folder_response = await http_client.get(
-                    folder_url,
-                    auth=(self.client.username, self.client.password),
-                    timeout=30.0
-                )
-                
-                if folder_response.status_code == 200:
-                    existing_docs = folder_response.json()
-                    print(f"      🔍 Checking {len(existing_docs)} existing documents in folder for duplicates...")
-                    for doc in existing_docs:
-                        doc_name = doc.get('name', '')
-                        doc_id = doc.get('id', '')
-                        print(f"         - Existing: '{doc_name}' vs New: '{filename}'")
-                        if doc_name == filename:
-                            print(f"      ℹ️  Document already exists: {filename} (ID: {doc_id})")
-                            print(f"      ✓ Skipping upload - summary already in OpenPages")
-                            return doc_id
-                    print(f"      ✓ No duplicate found, proceeding with upload")
-            
             # Encode file content to base64 for binary files
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
             
