@@ -845,13 +845,25 @@ Please provide:
                 # Check for documents
                 current_documents = await self.find_process_documents(process_id)
                 
-                # Find new documents
+                # Find new documents (skip AI-generated summaries)
                 new_docs = []
                 for doc in current_documents:
                     doc_id = self._get_field_value(doc, 'Resource ID')
-                    if doc_id not in known_documents:
-                        new_docs.append(doc)
-                        known_documents.add(doc_id)
+                    doc_name = self._get_field_value(doc, 'Name')
+                    
+                    # Skip if already tracked
+                    if doc_id in known_documents:
+                        continue
+                    
+                    # Skip AI-generated summaries (documents uploaded from COS)
+                    if doc_name.startswith("Executive Risk Summary"):
+                        print(f"[{timestamp}] ⏭ Skipping AI-generated summary: {doc_name}")
+                        known_documents.add(doc_id)  # Track it but don't process
+                        continue
+                    
+                    # This is a new user-uploaded document
+                    new_docs.append(doc)
+                    known_documents.add(doc_id)
                 
                 if new_docs:
                     print(f"[{timestamp}] 🆕 NEW DOCUMENT(S) DETECTED: {len(new_docs)}")
@@ -907,11 +919,6 @@ Please provide:
                 for i, doc in enumerate(documents, 1):
                     doc_id = self._get_field_value(doc, 'Resource ID')
                     doc_name = self._get_field_value(doc, 'Name')
-                    
-                    # Skip processing our own generated executive summaries
-                    if doc_name.startswith("Executive Risk Summary"):
-                        print(f"   [{i}/{len(documents)}] ⏭ Skipping {doc_name} (generated summary)")
-                        continue
                     
                     try:
                         # Download document from OpenPages
