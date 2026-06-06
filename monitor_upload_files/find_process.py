@@ -696,9 +696,80 @@ Please provide:
         except Exception as e:
             print(f"      ⚠ Exception getting document folder: {str(e)}")
             return None
+    async def find_existing_summary(self, process_id: str, original_doc_name: str) -> Optional[str]:
+        """
+        Find existing executive summary document for a given original document name.
+        Returns the document ID if found, None otherwise.
+        """
+        try:
+            import httpx
+            base = self.client.base_url.replace('/openpages', '').rstrip('/')
+            url = f"{base}/grc/api/contents/{process_id}/associations/children"
+            
+            # Expected summary name format: original_name-Executive-Summary
+            expected_summary_name = f"{original_doc_name}-Executive-Summary"
+            
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                response = await http_client.get(
+                    url,
+                    auth=(self.client.username, self.client.password),
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    children = response.json()
+                    
+                    # Search for existing summary document
+                    for child in children:
+                        child_name = child.get('name', '')
+                        child_id = child.get('id')
+                        
+                        # Check if this is the summary document we're looking for
+                        if child_name == expected_summary_name or child_name == f"{expected_summary_name}.docx":
+                            print(f"      ✓ Found existing summary: {child_name} (ID: {child_id})")
+                            return child_id
+                    
+                    print(f"      ℹ️  No existing summary found for: {expected_summary_name}")
+                    return None
+                else:
+                    print(f"      ⚠ Failed to search for existing summary: HTTP {response.status_code}")
+                    return None
+                    
+        except Exception as e:
+            print(f"      ⚠ Exception searching for existing summary: {str(e)}")
+            return None
+    
+    async def delete_document(self, doc_id: str) -> bool:
+        """Delete a document from OpenPages by ID"""
+        try:
+            import httpx
+            base = self.client.base_url.replace('/openpages', '').rstrip('/')
+            url = f"{base}/grc/api/contents/{doc_id}"
+            
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                response = await http_client.delete(
+                    url,
+                    auth=(self.client.username, self.client.password),
+                    timeout=30.0
+                )
+                
+                if response.status_code in [200, 204]:
+                    print(f"      ✓ Deleted existing summary (ID: {doc_id})")
+                    return True
+                else:
+                    print(f"      ⚠ Failed to delete document: HTTP {response.status_code}")
+                    return False
+                    
+        except Exception as e:
+            print(f"      ⚠ Exception deleting document: {str(e)}")
+            return False
+    
     
     async def upload_document_to_openpages(self, file_content: bytes, filename: str, description: str, process_id: str) -> Optional[str]:
-        """Upload a document back to OpenPages and associate it with the process"""
+        """
+        Upload a document back to OpenPages and associate it with the process.
+        Uses find-and-replace logic: if a summary already exists, delete it first.
+        """
         try:
             import httpx
             
@@ -709,12 +780,29 @@ Please provide:
                 print(f"      ⚠ Cannot upload: Unable to determine document folder for process {process_id}")
                 return None
             
+            # Extract original document name from filename (remove -Executive-Summary suffix)
+            # Expected format: "doc_1 [3]-Executive-Summary" or "Executive Risk Summary - doc_1 [3].txt"
+            original_doc_name = filename
+            if '-Executive-Summary' in filename:
+                original_doc_name = filename.split('-Executive-Summary')[0].strip()
+            elif filename.startswith('Executive Risk Summary - '):
+                original_doc_name = filename.replace('Executive Risk Summary - ', '').replace('.docx', '').replace('.txt', '').strip()
+            
+            # Check if summary already exists and delete it
+            existing_summary_id = await self.find_existing_summary(process_id, original_doc_name)
+            if existing_summary_id:
+                print(f"      🔄 Replacing existing summary...")
+                await self.delete_document(existing_summary_id)
+            
             # Encode file content to base64 for binary files
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
             
             base = self.client.base_url.replace('/openpages', '').rstrip('/')
             
-            # Step 1: Create document in the same folder as other process documents
+            # Create clean filename: original_name-Executive-Summary (without .docx, OpenPages adds it)
+            clean_filename = f"{original_doc_name}-Executive-Summary"
+            
+            # Create document in the same folder as other process documents
             create_url = f"{base}/grc/api/contents"
             
             create_payload = {
@@ -725,20 +813,19 @@ Please provide:
                     "children": file_content_b64
                 },
                 "fileTypeDefinition": {
-                    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "fileExtension": "docx"
+                    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 },
                 "fields": {
                     "field": []
                 },
-                "typeDefinitionId": "22",  # Document type
+                "typeDefinitionId": "4",  # SOXDocument type (same as other documents)
                 "parentFolderId": folder_id,
-                "name": filename,
+                "name": clean_filename,
                 "description": description
             }
             
             async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
-                print(f"      📤 Creating document in OpenPages: {filename}")
+                print(f"      📤 Creating document in OpenPages: {clean_filename}")
                 create_response = await http_client.post(
                     create_url,
                     json=create_payload,
