@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-OpenPages Process Finder - Standalone Version
-Finds processes by ID pattern (e.g., AML_PROC_0008)
+OpenPages Process Finder with Watson Orchestrate Integration
+Finds processes by ID pattern and processes documents with AI analysis
 """
 
 import os
@@ -10,9 +10,40 @@ import asyncio
 import argparse
 import base64
 import httpx
+import requests
+import json
+import io
+import time
+import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
+from aiohttp import web
+import threading
+import pytz
+
+# Text extraction libraries
+try:
+    from PyPDF2 import PdfReader
+    import docx
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    print("⚠ Warning: PyPDF2 or python-docx not installed. Text extraction limited.")
+
+# IBM COS
+try:
+    import ibm_boto3
+    from ibm_botocore.client import Config
+    COS_SUPPORT = True
+except ImportError:
+    COS_SUPPORT = False
+    print("⚠ Warning: ibm-cos-sdk not installed. COS upload disabled.")
+
+# Disable SSL warnings
+requests.packages.urllib3.disable_warnings()
 
 # Load .env file from the same directory as this script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -101,13 +132,21 @@ class ProcessFinder:
         self.cos_client = None
         self.cos_bucket = None
         
+        # Watson Orchestrate Configuration
+        self.wxo_api_key = os.getenv('WXO_API_KEY')
+        self.wxo_instance_id = os.getenv('WXO_INSTANCE_ID')
+        self.wxo_agent_id = os.getenv('WXO_AGENT_ID', '99f19079-0e86-4baf-965f-a17ebc7e672b')
+        self.wxo_token = None
+        self.wxo_token_expiration = 0
+        self.wxo_enabled = bool(self.wxo_api_key and self.wxo_instance_id and self.wxo_agent_id)
+        
         # Initialize COS if credentials are available
         cos_api_key = os.getenv('COS_API_KEY')
         cos_instance_crn = os.getenv('COS_INSTANCE_CRN')
         cos_endpoint = os.getenv('COS_ENDPOINT')
         cos_bucket = os.getenv('COS_BUCKET_NAME')
         
-        if all([cos_api_key, cos_instance_crn, cos_endpoint, cos_bucket]):
+        if all([cos_api_key, cos_instance_crn, cos_endpoint, cos_bucket]) and COS_SUPPORT:
             try:
                 import ibm_boto3
                 from ibm_botocore.client import Config
@@ -121,9 +160,18 @@ class ProcessFinder:
                 )
                 self.cos_bucket = cos_bucket
                 print(f"✓ IBM Cloud Object Storage initialized")
-                print(f"   Bucket: {cos_bucket}\n")
+                print(f"   Bucket: {cos_bucket}")
             except Exception as e:
-                print(f"⚠️  Failed to initialize COS: {str(e)}\n")
+                print(f"⚠️  Failed to initialize COS: {str(e)}")
+        
+        if self.wxo_enabled:
+            print(f"✓ Watson Orchestrate integration enabled")
+            print(f"   Instance ID: {self.wxo_instance_id}")
+            print(f"   Agent ID: {self.wxo_agent_id}")
+        else:
+            print(f"⚠ Watson Orchestrate not configured")
+        
+        print()  # Empty line for spacing
     
     async def find_process_by_id(self, process_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -243,6 +291,9 @@ class ProcessFinder:
             
             print(f"   Process Resource ID: {resource_id}")
             
+            # Store resource_id as instance variable for later use in upload
+            self.process_resource_id = resource_id
+            
             # Use the OpenPages API to get child associations (documents are children of processes)
             # This is more reliable than complex queries
             try:
@@ -344,6 +395,402 @@ class ProcessFinder:
             traceback.print_exc()
             return []
     
+    def extract_text_from_file(self, file_content: bytes, filename: str) -> str:
+        """Extract text content from various file types"""
+        ext = os.path.splitext(filename)[1].lower()
+        
+        try:
+            # Text files
+            if ext in ['.txt', '.csv', '.json', '.xml', '.log']:
+                return file_content.decode('utf-8', errors='ignore')
+            
+            # PDF files
+            elif ext == '.pdf' and PDF_SUPPORT:
+                pdf_file = io.BytesIO(file_content)
+                reader = PdfReader(pdf_file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+                return text
+            
+            # Word documents
+            elif ext in ['.docx'] and PDF_SUPPORT:
+                doc_file = io.BytesIO(file_content)
+                doc = docx.Document(doc_file)
+                text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                return text
+            
+            else:
+                return f"[Binary file: {filename} - text extraction not supported for {ext}]"
+        
+        except Exception as e:
+            print(f"⚠ Error extracting text from {filename}: {str(e)}")
+            return f"[Error extracting text from {filename}]"
+    
+    def is_token_expired(self, expiration_time: int) -> bool:
+        """Check if the token is expired (with 60 second buffer)"""
+        return int(time.time()) >= (expiration_time - 60)
+    
+    def get_bearer_token(self) -> Optional[str]:
+        """Get or refresh the Watson Orchestrate bearer token"""
+        if self.wxo_token and not self.is_token_expired(self.wxo_token_expiration):
+            return self.wxo_token
+        
+        try:
+            url = "https://iam.platform.saas.ibm.com/siusermgr/api/1.0/apikeys/token"
+            response = requests.post(url, json={"apikey": self.wxo_api_key}, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.wxo_token = data.get("token")
+                self.wxo_token_expiration = int(time.time()) + data.get("expires_in", 600)
+                print(f"✓ Watson Orchestrate token obtained (expires in {data.get('expires_in', 600)}s)")
+                return self.wxo_token
+            else:
+                print(f"⚠ Token request failed: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"⚠ Exception getting token: {str(e)}")
+            return None
+    
+    def trigger_wxo_executive_summary(self, document_text: str, filename: str, doc_id: str, process_id: str) -> Optional[Dict[str, Any]]:
+        """Trigger Watson Orchestrate executive summary agent with document content"""
+        if not self.wxo_enabled:
+            return None
+        
+        try:
+            # Get bearer token
+            token = self.get_bearer_token()
+            if not token:
+                print(f"⚠ Failed to get Watson Orchestrate token")
+                return None
+            
+            # Prepare the prompt for the agent
+            process_name = os.getenv('PROCESS_NAME', process_id)
+            prompt = f"""Please analyze this document and provide an executive summary:
+
+Document Name: {filename}
+Document ID: {doc_id}
+Process ID: {process_id}
+Process Name: {process_name}
+
+Document Content:
+{document_text[:8000]}
+
+Please provide:
+1. Executive Summary
+2. Key Findings
+3. Risk Assessment
+4. Recommendations
+"""
+            
+            # Watson Orchestrate chat completions API
+            url = f"https://api.dl.watson-orchestrate.ibm.com/instances/{self.wxo_instance_id}/v1/orchestrate/{self.wxo_agent_id}/chat/completions"
+            
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": False
+            }
+            
+            print(f"🤖 Triggering Watson Orchestrate executive summary agent...")
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=120)
+            
+            if response.status_code == 200:
+                data = response.json()
+                summary = data.get("choices", [{}])[0].get("message", {}).get("content", "No response returned.")
+                print(f"✅ Executive summary generated successfully!")
+                print(f"   Summary preview: {summary[:200]}...")
+                
+                # Use EST timezone for timestamp
+                est = pytz.timezone('US/Eastern')
+                est_time = datetime.now(est)
+                
+                result = {
+                    "summary": summary,
+                    "document_name": filename,
+                    "document_id": doc_id,
+                    "process_id": process_id,
+                    "timestamp": est_time.strftime("%d/%m/%Y %H:%M:%S")
+                }
+                return result
+            else:
+                print(f"⚠ Watson Orchestrate agent failed: HTTP {response.status_code}")
+                print(f"   Response: {response.text[:500]}")
+                return None
+        
+        except Exception as e:
+            print(f"⚠ Exception calling Watson Orchestrate agent: {str(e)}")
+            return None
+    
+    def format_summary_as_docx(self, wxo_result: Dict[str, Any], filename: str, doc_id: str) -> Optional[bytes]:
+        """Format Watson Orchestrate summary as a DOCX document"""
+        if not PDF_SUPPORT:
+            print("⚠ python-docx not available, skipping DOCX generation")
+            return None
+        
+        try:
+            from docx import Document
+            
+            doc = Document()
+            
+            # Title
+            title = doc.add_heading('WATSON ORCHESTRATE EXECUTIVE SUMMARY', 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Document Information Section
+            doc.add_heading('Document Information', level=1)
+            info_table = doc.add_table(rows=5, cols=2)
+            info_table.style = 'Light Grid Accent 1'
+            
+            process_name = os.getenv('PROCESS_NAME', wxo_result.get('process_id', 'N/A'))
+            info_data = [
+                ('Document Name:', filename),
+                ('Document ID:', str(doc_id)),
+                ('Process ID:', str(wxo_result.get('process_id', 'N/A'))),
+                ('Process Name:', process_name),
+                ('Generated:', wxo_result.get('timestamp', 'N/A'))
+            ]
+            
+            for i, (label, value) in enumerate(info_data):
+                info_table.rows[i].cells[0].text = label
+                info_table.rows[i].cells[1].text = value
+                # Bold the labels
+                info_table.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
+            
+            doc.add_paragraph()  # Add spacing
+            
+            # Executive Summary Section
+            doc.add_heading('Executive Summary', level=1)
+            
+            summary = wxo_result.get('summary', 'No summary available')
+            
+            # Parse and format the summary
+            lines = summary.split('\n')
+            current_paragraph = None
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    current_paragraph = None
+                    continue
+                
+                # Main headers (starts with ** and ends with ** and no other text)
+                if line.startswith('**') and line.endswith('**') and line.count('**') == 2:
+                    header_text = line.replace('**', '').strip()
+                    doc.add_heading(header_text, level=2)
+                    current_paragraph = None
+                # Numbered items
+                elif len(line) > 2 and line[0:2].replace('.', '').replace(')', '').isdigit():
+                    p = doc.add_paragraph(style='List Number')
+                    self._add_formatted_text(p, line)
+                    current_paragraph = None
+                # Bullet points
+                elif line.startswith('- ') or line.startswith('* '):
+                    p = doc.add_paragraph(style='List Bullet')
+                    self._add_formatted_text(p, line[2:])
+                    current_paragraph = None
+                # Regular text
+                else:
+                    if current_paragraph is None:
+                        current_paragraph = doc.add_paragraph()
+                        self._add_formatted_text(current_paragraph, line)
+                    else:
+                        current_paragraph.add_run(' ')
+                        self._add_formatted_text(current_paragraph, line)
+            
+            # Save to bytes
+            docx_bytes = io.BytesIO()
+            doc.save(docx_bytes)
+            docx_bytes.seek(0)
+            
+            return docx_bytes.getvalue()
+        
+        except Exception as e:
+            print(f"⚠ Error formatting DOCX: {str(e)}")
+            return None
+    
+    def _add_formatted_text(self, paragraph, text: str):
+        """Add text to paragraph with inline bold formatting support"""
+        # Split text by ** markers for bold formatting
+        parts = re.split(r'(\*\*.*?\*\*)', text)
+        
+        for part in parts:
+            if part.startswith('**') and part.endswith('**'):
+                # Bold text
+                bold_text = part[2:-2]  # Remove ** markers
+                run = paragraph.add_run(bold_text)
+                run.font.bold = True
+            elif part:
+                # Regular text
+                paragraph.add_run(part)
+    
+    async def get_document_folder_id(self, process_id: str) -> Optional[str]:
+        """
+        Get the folder ID where documents associated with this process are stored.
+        This checks existing child documents to find the correct folder.
+        """
+        try:
+            import httpx
+            base = self.client.base_url.replace('/openpages', '').rstrip('/')
+            url = f"{base}/grc/api/contents/{process_id}/associations/children"
+            
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                response = await http_client.get(
+                    url,
+                    auth=(self.client.username, self.client.password),
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    children = response.json()
+                    
+                    if not children:
+                        print(f"      ⚠ No child documents found for process")
+                        return None
+                    
+                    # Try to find any document to get its folder
+                    # First try documents with type 22, then fall back to any child
+                    print(f"      🔍 Found {len(children)} child items, checking for documents...")
+                    
+                    for child in children:
+                        doc_id = child.get('id')
+                        type_id = child.get('typeDefinitionId')
+                        name = child.get('name', 'unknown')
+                        
+                        print(f"         - Child: {name} (ID: {doc_id}, Type: {type_id})")
+                        
+                        # Try to get this item's details to find its folder
+                        if doc_id:
+                            doc_url = f"{base}/grc/api/contents/{doc_id}"
+                            doc_response = await http_client.get(
+                                doc_url,
+                                auth=(self.client.username, self.client.password),
+                                timeout=30.0
+                            )
+                            
+                            if doc_response.status_code == 200:
+                                doc_data = doc_response.json()
+                                folder_id = doc_data.get('parentFolderId')
+                                
+                                if folder_id:
+                                    print(f"      ✓ Found document folder ID: {folder_id} from {name}")
+                                    return folder_id
+                    
+                    print(f"      ⚠ Could not determine folder from any child documents")
+                else:
+                    print(f"      ⚠ Failed to get process children: HTTP {response.status_code}")
+                
+                return None
+                
+        except Exception as e:
+            print(f"      ⚠ Exception getting document folder: {str(e)}")
+            return None
+    
+    async def upload_document_to_openpages(self, file_content: bytes, filename: str, description: str, process_id: str) -> Optional[str]:
+        """Upload a document back to OpenPages and associate it with the process"""
+        try:
+            import httpx
+            
+            # Get the folder ID where documents for this process are stored
+            folder_id = await self.get_document_folder_id(process_id)
+            
+            if not folder_id:
+                print(f"      ⚠ Cannot upload: Unable to determine document folder for process {process_id}")
+                return None
+            
+            # Encode file content to base64 for binary files
+            file_content_b64 = base64.b64encode(file_content).decode('utf-8')
+            
+            base = self.client.base_url.replace('/openpages', '').rstrip('/')
+            
+            # Step 1: Create document in the same folder as other process documents
+            create_url = f"{base}/grc/api/contents"
+            
+            create_payload = {
+                "contentDefinition": {
+                    "attribute": {
+                        "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    },
+                    "children": file_content_b64
+                },
+                "fileTypeDefinition": {
+                    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "fileExtension": "docx"
+                },
+                "fields": {
+                    "field": []
+                },
+                "typeDefinitionId": "22",  # Document type
+                "parentFolderId": folder_id,
+                "name": filename,
+                "description": description
+            }
+            
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                print(f"      📤 Creating document in OpenPages: {filename}")
+                create_response = await http_client.post(
+                    create_url,
+                    json=create_payload,
+                    auth=(self.client.username, self.client.password),
+                    timeout=60.0
+                )
+                
+                if create_response.status_code not in [200, 201]:
+                    print(f"      ⚠ Failed to create document: HTTP {create_response.status_code}")
+                    print(f"         Response: {create_response.text[:500]}")
+                    return None
+                
+                doc_data = create_response.json()
+                new_doc_id = doc_data.get('id')
+                print(f"      ✓ Document created with ID: {new_doc_id}")
+                print(f"      ✓ Document automatically associated via parentFolderId: {folder_id}")
+                
+                return new_doc_id
+                
+        except Exception as e:
+            print(f"      ⚠ Exception uploading document to OpenPages: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    
+    def start_health_server(self, port: int = 8080):
+        """Start a simple HTTP health check server in a background thread"""
+        async def health_handler(request):
+            return web.Response(text='OK', status=200)
+        
+        async def run_server():
+            app = web.Application()
+            app.router.add_get('/health', health_handler)
+            app.router.add_get('/', health_handler)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', port)
+            await site.start()
+            print(f"✓ Health check server started on port {port}")
+            # Keep the server running
+            while True:
+                await asyncio.sleep(3600)
+        
+        def run_in_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_server())
+        
+        thread = threading.Thread(target=run_in_thread, daemon=True)
+        thread.start()
+    
     async def monitor_process_for_new_documents(self, process_id: str, check_interval: int = 60):
         """
         Continuously monitor a process for new document uploads
@@ -354,12 +801,16 @@ class ProcessFinder:
         """
         known_documents: set = set()
         
+        # Start health check server for Code Engine readiness probe
+        self.start_health_server(port=8080)
+        
         print("\n" + "=" * 70)
         print("DOCUMENT MONITORING STARTED")
         print("=" * 70)
         print(f"Process ID: {process_id}")
         print(f"Check Interval: {check_interval} seconds")
         print(f"COS Upload: {'ENABLED ☁️' if self.cos_client else 'DISABLED'}")
+        print(f"Health Check: ENABLED on port 8080")
         print("=" * 70)
         
         # Initialize - get existing documents
@@ -457,6 +908,11 @@ class ProcessFinder:
                     doc_id = self._get_field_value(doc, 'Resource ID')
                     doc_name = self._get_field_value(doc, 'Name')
                     
+                    # Skip processing our own generated executive summaries
+                    if doc_name.startswith("Executive Risk Summary"):
+                        print(f"   [{i}/{len(documents)}] ⏭ Skipping {doc_name} (generated summary)")
+                        continue
+                    
                     try:
                         # Download document from OpenPages
                         download_url = f"{base}/grc/api/contents/{doc_id}/document"
@@ -475,8 +931,11 @@ class ProcessFinder:
                             file_content = response.content
                             file_size = len(file_content)
                             
-                            # Upload to COS
-                            cos_key = f"Process_{process_id}/{doc_name}"
+                            # Upload original document to COS
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            name, ext = os.path.splitext(doc_name)
+                            unique_filename = f"{name}_{timestamp}{ext}"
+                            cos_key = f"Process_{process_id}/{unique_filename}"
                             
                             self.cos_client.put_object(
                                 Bucket=self.cos_bucket,
@@ -485,12 +944,68 @@ class ProcessFinder:
                             )
                             
                             print(f"      ✅ Uploaded to COS: {cos_key} ({file_size:,} bytes)")
+                            
+                            # Extract text content
+                            print(f"      📄 Extracting text content...")
+                            document_text = self.extract_text_from_file(file_content, doc_name)
+                            text_length = len(document_text)
+                            print(f"      ✓ Extracted {text_length:,} characters of text")
+                            
+                            # Trigger Watson Orchestrate executive summary agent
+                            if self.wxo_enabled and text_length > 50:
+                                wxo_result = self.trigger_wxo_executive_summary(document_text, doc_name, doc_id, process_id)
+                                if wxo_result:
+                                    # Save summary as JSON to COS
+                                    summary_filename_json = f"{name}_summary_{timestamp}.json"
+                                    summary_content_json = json.dumps(wxo_result, indent=2).encode('utf-8')
+                                    cos_key_json = f"Process_{process_id}/{summary_filename_json}"
+                                    
+                                    self.cos_client.put_object(
+                                        Bucket=self.cos_bucket,
+                                        Key=cos_key_json,
+                                        Body=summary_content_json
+                                    )
+                                    print(f"      ✅ Summary JSON saved to COS: {cos_key_json}")
+                                    
+                                    # Format and save summary as DOCX
+                                    formatted_doc_bytes = self.format_summary_as_docx(wxo_result, doc_name, doc_id)
+                                    if formatted_doc_bytes:
+                                        summary_filename_docx = f"{name}_summary_{timestamp}.docx"
+                                        cos_key_docx = f"Process_{process_id}/{summary_filename_docx}"
+                                        
+                                        self.cos_client.put_object(
+                                            Bucket=self.cos_bucket,
+                                            Key=cos_key_docx,
+                                            Body=formatted_doc_bytes
+                                        )
+                                        print(f"      ✅ Summary DOCX saved to COS: {cos_key_docx}")
+                                        
+                                        # Upload the DOCX summary back to OpenPages
+                                        executive_summary_filename = f"Executive Risk Summary - {doc_name}.docx"
+                                        # Use the stored process resource ID instead of process name
+                                        resource_id = getattr(self, 'process_resource_id', process_id)
+                                        uploaded_doc_id = await self.upload_document_to_openpages(
+                                            file_content=formatted_doc_bytes,
+                                            filename=executive_summary_filename,
+                                            description=f"AI-generated executive risk summary for {doc_name}",
+                                            process_id=resource_id
+                                        )
+                                        
+                                        if uploaded_doc_id:
+                                            print(f"      ✅ Executive summary uploaded to OpenPages: {executive_summary_filename}")
+                                        else:
+                                            print(f"      ⚠ Could not upload summary to OpenPages (saved to COS only)")
+                                        
+                                        print(f"      📄 Executive summary available in COS bucket and OpenPages")
+                            
                             success_count += 1
                         else:
                             print(f"      ❌ Failed to download: HTTP {response.status_code}")
                     
                     except Exception as e:
                         print(f"      ❌ Error: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
                         continue
         
         except Exception as e:
