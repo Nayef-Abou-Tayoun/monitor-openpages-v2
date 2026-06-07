@@ -104,23 +104,61 @@ class SummaryUploader:
             self.log(f"❌ Error downloading {key}: {e}")
             return None
     
+    async def get_document_folder_id(self, process_id):
+        """Get the folder ID where documents for this process are stored"""
+        try:
+            import httpx
+            base = self.server.replace('/openpages', '').rstrip('/')
+            url = f"{base}/grc/api/contents/{process_id}/associations/children"
+            
+            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
+                response = await http_client.get(
+                    url,
+                    auth=(self.username, self.password),
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    children = response.json()
+                    
+                    if not children:
+                        return None
+                    
+                    # Try to find any document to get its folder
+                    for child in children:
+                        doc_id = child.get('id')
+                        
+                        if doc_id:
+                            doc_url = f"{base}/grc/api/contents/{doc_id}"
+                            doc_response = await http_client.get(
+                                doc_url,
+                                auth=(self.username, self.password),
+                                timeout=30.0
+                            )
+                            
+                            if doc_response.status_code == 200:
+                                doc_data = doc_response.json()
+                                folder_id = doc_data.get('parentFolderId')
+                                
+                                if folder_id:
+                                    return folder_id
+                
+                return None
+                
+        except Exception as e:
+            self.log(f"      ⚠ Exception getting document folder: {str(e)}")
+            return None
+    
     async def upload_to_openpages(self, file_content, filename, description):
         """Upload a document to OpenPages using httpx async client"""
         try:
-            # Use folder ID as parent (31628 is the document folder for AML_PROC_00081)
+            # Use known folder ID for AML_PROC_00081
             folder_id = "31628"
             self.log(f"      Using folder ID: {folder_id}")
             
-            # Encode file content
-            file_content_b64 = base64.b64encode(file_content).decode('utf-8')
-            
-            # Remove /openpages from base_url if present
-            base = self.server.replace('/openpages', '').rstrip('/')
-            create_url = f"{base}/grc/api/contents"
-            
             # Extract original document name from summary filename
-            # Format: doc_1 [4]_summary_20260606_160856.docx -> doc_1 [4]-Executive-Summary
-            # Remove _summary and timestamp parts, keep only the original doc name
+            # Format: doc_1 [4]_summary_20260606_160856.docx -> doc_1 [4]
+            # Keep version numbers to ensure unique filenames
             name_without_ext = filename.rsplit('.', 1)[0]  # Remove .docx
             
             # Find the original document name (everything before _summary)
@@ -129,8 +167,18 @@ class SummaryUploader:
             else:
                 original_doc_name = name_without_ext
             
-            # Create clean filename: original_name-Executive-Summary
-            unique_filename = f"{original_doc_name}-Executive-Summary"
+            # Create summary filename with timestamp to ensure uniqueness and avoid "object already exists" error
+            from datetime import datetime
+            timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+            summary_filename = f"Executive Risk Summary - {original_doc_name} - {timestamp_suffix}"
+            self.log(f"      📤 Creating summary: {summary_filename}")
+            
+            # Encode file content
+            file_content_b64 = base64.b64encode(file_content).decode('utf-8')
+            
+            # Remove /openpages from base_url if present
+            base = self.server.replace('/openpages', '').rstrip('/')
+            create_url = f"{base}/grc/api/contents"
             
             create_payload = {
                 "contentDefinition": {
@@ -147,11 +195,11 @@ class SummaryUploader:
                 },
                 "typeDefinitionId": "4",  # SOXDocument type (same as existing docs)
                 "parentFolderId": folder_id,
-                "name": unique_filename,
+                "name": summary_filename.replace('.txt', '').replace('.docx', ''),
                 "description": description
             }
             
-            self.log(f"      📤 Uploading: {unique_filename}")
+            self.log(f"      📤 Uploading: {summary_filename}")
             
             # Use httpx async client like find_process.py
             async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:

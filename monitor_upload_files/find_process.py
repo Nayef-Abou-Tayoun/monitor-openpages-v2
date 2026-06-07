@@ -696,79 +696,9 @@ Please provide:
         except Exception as e:
             print(f"      ⚠ Exception getting document folder: {str(e)}")
             return None
-    async def find_existing_summary(self, process_id: str, original_doc_name: str) -> Optional[str]:
-        """
-        Find existing executive summary document for a given original document name.
-        Returns the document ID if found, None otherwise.
-        """
-        try:
-            import httpx
-            base = self.client.base_url.replace('/openpages', '').rstrip('/')
-            url = f"{base}/grc/api/contents/{process_id}/associations/children"
-            
-            # Expected summary name format: original_name-Executive-Summary
-            expected_summary_name = f"{original_doc_name}-Executive-Summary"
-            
-            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
-                response = await http_client.get(
-                    url,
-                    auth=(self.client.username, self.client.password),
-                    timeout=30.0
-                )
-                
-                if response.status_code == 200:
-                    children = response.json()
-                    
-                    # Search for existing summary document
-                    for child in children:
-                        child_name = child.get('name', '')
-                        child_id = child.get('id')
-                        
-                        # Check if this is the summary document we're looking for
-                        if child_name == expected_summary_name or child_name == f"{expected_summary_name}.docx":
-                            print(f"      ✓ Found existing summary: {child_name} (ID: {child_id})")
-                            return child_id
-                    
-                    print(f"      ℹ️  No existing summary found for: {expected_summary_name}")
-                    return None
-                else:
-                    print(f"      ⚠ Failed to search for existing summary: HTTP {response.status_code}")
-                    return None
-                    
-        except Exception as e:
-            print(f"      ⚠ Exception searching for existing summary: {str(e)}")
-            return None
-    
-    async def delete_document(self, doc_id: str) -> bool:
-        """Delete a document from OpenPages by ID"""
-        try:
-            import httpx
-            base = self.client.base_url.replace('/openpages', '').rstrip('/')
-            url = f"{base}/grc/api/contents/{doc_id}"
-            
-            async with httpx.AsyncClient(verify=False, follow_redirects=True) as http_client:
-                response = await http_client.delete(
-                    url,
-                    auth=(self.client.username, self.client.password),
-                    timeout=30.0
-                )
-                
-                if response.status_code in [200, 204]:
-                    print(f"      ✓ Deleted existing summary (ID: {doc_id})")
-                    return True
-                else:
-                    print(f"      ⚠ Failed to delete document: HTTP {response.status_code}")
-                    return False
-                    
-        except Exception as e:
-            print(f"      ⚠ Exception deleting document: {str(e)}")
-            return False
-    
-    
     async def upload_document_to_openpages(self, file_content: bytes, filename: str, description: str, process_id: str) -> Optional[str]:
         """
         Upload a document back to OpenPages and associate it with the process.
-        Uses find-and-replace logic: if a summary already exists, delete it first.
         """
         try:
             import httpx
@@ -780,27 +710,13 @@ Please provide:
                 print(f"      ⚠ Cannot upload: Unable to determine document folder for process {process_id}")
                 return None
             
-            # Extract original document name from filename (remove -Executive-Summary suffix)
-            # Expected format: "doc_1 [3]-Executive-Summary" or "Executive Risk Summary - doc_1 [3].txt"
-            original_doc_name = filename
-            if '-Executive-Summary' in filename:
-                original_doc_name = filename.split('-Executive-Summary')[0].strip()
-            elif filename.startswith('Executive Risk Summary - '):
-                original_doc_name = filename.replace('Executive Risk Summary - ', '').replace('.docx', '').replace('.txt', '').strip()
-            
-            # Check if summary already exists and delete it
-            existing_summary_id = await self.find_existing_summary(process_id, original_doc_name)
-            if existing_summary_id:
-                print(f"      🔄 Replacing existing summary...")
-                await self.delete_document(existing_summary_id)
-            
             # Encode file content to base64 for binary files
             file_content_b64 = base64.b64encode(file_content).decode('utf-8')
             
             base = self.client.base_url.replace('/openpages', '').rstrip('/')
             
-            # Create clean filename: original_name-Executive-Summary (without .docx, OpenPages adds it)
-            clean_filename = f"{original_doc_name}-Executive-Summary"
+            # Use filename as-is (without .docx extension, OpenPages adds it)
+            clean_filename = filename.replace('.docx', '').replace('.txt', '')
             
             # Create document in the same folder as other process documents
             create_url = f"{base}/grc/api/contents"
@@ -841,7 +757,25 @@ Please provide:
                 doc_data = create_response.json()
                 new_doc_id = doc_data.get('id')
                 print(f"      ✓ Document created with ID: {new_doc_id}")
-                print(f"      ✓ Document automatically associated via parentFolderId: {folder_id}")
+                
+                # Now associate the document with the process
+                associate_url = f"{base}/grc/api/contents/{process_id}/associations/children"
+                associate_payload = [{"id": new_doc_id}]  # Array format per OpenPages API
+                
+                print(f"      📎 Associating document with process {process_id}...")
+                associate_response = await http_client.post(
+                    associate_url,
+                    json=associate_payload,
+                    auth=(self.client.username, self.client.password),
+                    timeout=30.0
+                )
+                
+                if associate_response.status_code in [200, 201, 204]:
+                    print(f"      ✓ Document associated with process successfully")
+                else:
+                    print(f"      ⚠ Association warning: HTTP {associate_response.status_code}")
+                    print(f"         Response: {associate_response.text[:500]}")
+                    print(f"         Document created but may not appear in Files tab")
                 
                 return new_doc_id
                 
@@ -943,7 +877,7 @@ Please provide:
                         continue
                     
                     # Skip AI-generated summaries (documents uploaded from COS)
-                    if doc_name.startswith("Executive Risk Summary"):
+                    if doc_name.startswith("Executive Risk Summary") or "-Executive-Summary" in doc_name:
                         print(f"[{timestamp}] ⏭ Skipping AI-generated summary: {doc_name}")
                         known_documents.add(doc_id)  # Track it but don't process
                         continue
@@ -1014,12 +948,30 @@ Please provide:
                         
                         print(f"   [{i}/{len(documents)}] Downloading {doc_name}...")
                         
-                        response = await http_client.get(
-                            download_url,
-                            headers=headers,
-                            auth=(self.client.username, self.client.password),
-                            timeout=60.0
-                        )
+                        # Retry logic with exponential backoff for network errors
+                        max_retries = 3
+                        response = None
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                response = await http_client.get(
+                                    download_url,
+                                    headers=headers,
+                                    auth=(self.client.username, self.client.password),
+                                    timeout=120.0  # Increased from 60s to 120s
+                                )
+                                break  # Success, exit retry loop
+                            except (httpx.ReadError, httpx.TimeoutException) as e:
+                                if attempt < max_retries - 1:
+                                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                                    print(f"      ⚠ Network error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...")
+                                    await asyncio.sleep(wait_time)
+                                else:
+                                    print(f"      ❌ Failed after {max_retries} attempts: {str(e)}")
+                                    raise
+                        
+                        if response is None:
+                            continue  # Skip this document if all retries failed
                         
                         if response.status_code == 200:
                             file_content = response.content
@@ -1075,7 +1027,10 @@ Please provide:
                                         print(f"      ✅ Summary DOCX saved to COS: {cos_key_docx}")
                                         
                                         # Upload the DOCX summary back to OpenPages
-                                        executive_summary_filename = f"Executive Risk Summary - {doc_name}.docx"
+                                        # Add timestamp to filename to ensure uniqueness and avoid "object already exists" error
+                                        from datetime import datetime
+                                        timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        executive_summary_filename = f"Executive Risk Summary - {doc_name} - {timestamp_suffix}"
                                         # Use the stored process resource ID instead of process name
                                         resource_id = getattr(self, 'process_resource_id', process_id)
                                         uploaded_doc_id = await self.upload_document_to_openpages(
