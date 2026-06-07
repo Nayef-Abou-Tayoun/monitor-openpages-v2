@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  openpages-monitor:
+    build: .
+    container_name: openpages-document-monitor
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: python find_process.py --id ${PROCESS_ID:-AML_PROC_00081} --monitor --interval ${CHECK_INTERVAL:-60}
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - openpages-network
+
+  # Optional: One-time document download
+  openpages-download:
+    build: .
+    container_name: openpages-document-download
+    env_file:
+      - .env
+    command: python find_process.py --id ${PROCESS_ID:-AML_PROC_00081} --documents --download
+    profiles:
+      - download
+    networks:
+      - openpages-network
+
+networks:
+  openpages-network:
+    driver: bridge
+
+# Made with Bob
