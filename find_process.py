@@ -417,7 +417,44 @@ class ProcessFinder:
             elif ext in ['.docx'] and PDF_SUPPORT:
                 doc_file = io.BytesIO(file_content)
                 doc = docx.Document(doc_file)
-                text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                
+                # Extract all content from DOCX
+                extracted_parts = []
+                
+                # 1. Extract paragraphs
+                for paragraph in doc.paragraphs:
+                    if paragraph.text.strip():
+                        extracted_parts.append(paragraph.text)
+                
+                # 2. Extract tables
+                for table in doc.tables:
+                    table_text = []
+                    for row in table.rows:
+                        row_text = []
+                        for cell in row.cells:
+                            # Get text from each cell, including nested paragraphs
+                            cell_text = ' '.join([p.text for p in cell.paragraphs if p.text.strip()])
+                            row_text.append(cell_text)
+                        if any(row_text):  # Only add non-empty rows
+                            table_text.append(' | '.join(row_text))
+                    if table_text:
+                        extracted_parts.append('\n'.join(table_text))
+                
+                # 3. Extract headers
+                for section in doc.sections:
+                    # Header
+                    header = section.header
+                    for paragraph in header.paragraphs:
+                        if paragraph.text.strip():
+                            extracted_parts.append(f"[Header: {paragraph.text}]")
+                    
+                    # Footer
+                    footer = section.footer
+                    for paragraph in footer.paragraphs:
+                        if paragraph.text.strip():
+                            extracted_parts.append(f"[Footer: {paragraph.text}]")
+                
+                text = "\n\n".join(extracted_parts)
                 return text
             
             else:
