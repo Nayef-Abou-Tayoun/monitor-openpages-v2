@@ -38,7 +38,7 @@ This evaluation framework uses a **three-tier approach** to validate WXO Agent o
                              │
                              ▼
     ┌────────────────────────────────────────────────────────┐
-    │        TIER 3: GROUND TRUTH VALIDATION                 │
+    │        TIER 3: GROUND TRUTH VALIDATION (Golden Dataset)│
     │    (Combined Consensus vs Similar Use Case 75%+)       │
     └────────────────────────────────────────────────────────┘
                              │
