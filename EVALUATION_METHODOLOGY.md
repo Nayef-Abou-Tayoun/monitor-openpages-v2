@@ -33,13 +33,16 @@ This evaluation framework uses a **three-tier approach** to validate WXO Agent o
                              ▼
     ┌────────────────────────────────────────────────────────┐
     │      TIER 2: CROSS-MODEL CONSISTENCY EVALUATION        │
-    │         (Two Judge Agents - 3 Runs Each)               │
+    │         (Two Judge Agents with different               |
+    |               LLM models - 3 Runs Each)                │
     └────────────────────────────────────────────────────────┘
                              │
                              ▼
     ┌────────────────────────────────────────────────────────┐
     │        TIER 3: GROUND TRUTH VALIDATION (Golden Dataset)│
-    │    (Combined Consensus vs Similar Use Case 75%+)       │
+    │             (Combined Consensus from Judges            |
+    |                       vs                               |
+    |              Similar Use Case 75%+)                    │
     └────────────────────────────────────────────────────────┘
                              │
                              ▼
